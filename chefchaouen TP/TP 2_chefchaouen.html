@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<base target="_top">
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Leaflet Map with Additional Features</title>
+	
+	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+	<script src="chefchaouen.js" type="text/javascript"></script>
+
+	<link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css"/>
+	<script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-draw/dist/leaflet.draw.css" />
+    <script src="https://unpkg.com/leaflet-draw/dist/leaflet.draw.js"></script>
+
+	<style>
+		html, body {
+			height: 100%;
+			margin: 0;
+		}
+		#map {
+			height: 100vh;
+			border: 2px solid #000;
+		}
+		#controls {
+			position: absolute;
+			top: 10px;
+			left: 70px;
+			z-index: 1000;
+			display: flex;
+			align-items: center;
+		}
+		#header {
+			position: absolute;
+			top: 10px;
+			right: 20px;
+			z-index: 1000;
+			background-color: white;
+			padding: 10px;
+			border-radius: 4px;
+			box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+			font-weight: bold;
+		}
+		#search {
+			background-color: white;
+			padding: 10px;
+			border-radius: 4px;
+			box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+			margin-right: 10px;
+		}
+		#search input {
+			padding: 10px;
+			font-size: 16px;
+			width: 250px;
+			border: 1px solid #ccc;
+			border-radius: 4px;
+		}
+		#search button {
+			padding: 10px;
+			font-size: 16px;
+			border: none;
+			background-color: blue;
+			color: white;
+			border-radius: 4px;
+			cursor: pointer;
+			transition: background-color 0.3s ease;
+		}
+		#search button.clicked {
+			background-color: rgb(241, 252, 20);
+		}
+		#previous-button, #next-button {
+			width: 40px;
+			height: 40px;
+			background-color: blue;
+			color: white;
+			border-radius: 50%;
+			border: none;
+			cursor: pointer;
+			display: flex;
+			justify-content: center;
+			align-items: center;
+			font-size: 24px;
+			font-weight: bold;
+			margin-left: 10px;
+			transition: background-color 0.3s ease;
+		}
+		#previous-button.clicked, #next-button.clicked {
+			background-color: rgb(233, 244, 17);
+		}
+		.commune-label {
+			pointer-events: none;
+			font-size: 12px;
+			color: darkblue;
+			font-weight: bold;
+			text-shadow: 1px 1px 2px white;
+		}
+	</style>
+</head>
+<body>
+
+<div id="map"></div>
+<div id="controls">
+	<div id="search">
+		<input type="text" id="search-input" placeholder="Rechercher une localisation" />
+		<button id="search-button"><i class="fas fa-search"></i></button>
+	</div>
+	<button id="previous-button">&#8592;</button>
+	<button id="next-button">&#8594;</button>
+</div>
+<div id="header">TP : commune de chefchaouen. 09_aradda_soukaina 11_baddour_oumayma</div>
+
+<script>
+	var map = L.map('map').setView([35.187256534422026, -5.268063056926198], 10);
+
+	var cartodbAttribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, &copy; <a href="https://carto.com/attribution">CARTO</a>';
+	var positron = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png', {
+		attribution: cartodbAttribution
+	}).addTo(map);
+
+	map.createPane('labels');
+	map.getPane('labels').style.zIndex = 650;
+	map.getPane('labels').style.pointerEvents = 'none';
+
+	var positronLabels = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png', {
+		attribution: cartodbAttribution,
+		pane: 'labels'
+	}).addTo(map);
+
+	var communeLabels = [];
+	var geojson = L.geoJson(chefchaouen, {
+		onEachFeature: function (feature, layer) {
+			layer.bindPopup(feature.properties.NOM_COM);
+			var label = L.divIcon({
+				className: 'commune-label',
+				html: feature.properties.NOM_COM,
+				iconSize: [100, 40]
+			});
+			var centroid = layer.getBounds().getCenter();
+			var marker = L.marker(centroid, { icon: label, interactive: false });
+			marker.addTo(map);
+			communeLabels.push(marker);
+		}
+	}).addTo(map);
+
+	var minZoomToShowLabels = 12;
+	map.on('zoomend', function () {
+		if (map.getZoom() >= minZoomToShowLabels) {
+			showCommuneLabels();
+		} else {
+			hideCommuneLabels();
+		}
+	});
+
+	function showCommuneLabels() {
+		communeLabels.forEach(function(labelMarker) {
+			labelMarker.addTo(map);
+		});
+	}
+
+	function hideCommuneLabels() {
+		communeLabels.forEach(function(labelMarker) {
+			map.removeLayer(labelMarker);
+		});
+	}
+
+
+	let locationHistory = [];
+	let futureHistory = [];
+	let currentLocation = [35.187256534422026, -5.268063056926198];
+	const geocoder = L.Control.Geocoder.nominatim();
+
+	document.getElementById('search-button').onclick = function() {
+		const query = document.getElementById('search-input').value;
+		geocoder.geocode(query, function(results) {
+			if (results && results.length > 0) {
+				const latLng = results[0].center;
+				if (currentLocation) {
+					locationHistory.push(currentLocation);
+				}
+				currentLocation = latLng;
+				map.setView(latLng, 13);
+				futureHistory = [];
+			}
+		});
+	};
+
+	document.getElementById('previous-button').onclick = function() {
+		if (locationHistory.length > 0) {
+			const previousLocation = locationHistory.pop();
+			futureHistory.push(currentLocation);
+			currentLocation = previousLocation;
+			map.setView(previousLocation, 13);
+		}
+	};
+
+	document.getElementById('next-button').onclick = function() {
+		if (futureHistory.length > 0) {
+			const nextLocation = futureHistory.pop();
+			locationHistory.push(currentLocation);
+			currentLocation = nextLocation;
+			map.setView(nextLocation, 13);
+		}
+	};
+
+	const drawnItems = new L.FeatureGroup();
+	map.addLayer(drawnItems);
+	const drawControl = new L.Control.Draw({
+		edit: {
+			featureGroup: drawnItems
+		},
+		draw: {
+			polygon: {
+				shapeOptions: { color: 'green' },
+				showArea: true
+			},
+			polyline: { shapeOptions: { color: 'orange' } },
+			rectangle: { shapeOptions: { color: 'purple' } },
+			circle: false
+		}
+	});
+	map.addControl(drawControl);
+
+	map.on(L.Draw.Event.CREATED, function (event) {
+		const layer = event.layer;
+		drawnItems.addLayer(layer);
+		if (event.layerType === 'polygon' || event.layerType === 'rectangle') {
+			const area = L.GeometryUtil.geodesicArea(layer.getLatLngs()[0]);
+			layer.bindPopup(`Surface: ${area.toFixed(2)} m²`).openPopup();
+		}
+	});
+</script>
+
+</body>
+</html>
